@@ -1,0 +1,110 @@
+name: Deploy Workflow
+on: deployment
+jobs:
+  deploy-ENVIRONMENT_NAME:
+    name: Deploy to ENVIRONMENT_NAME environment
+    if: ${{ github.event.deployment.environment }} == ENVIRONMENT_NAME
+    concurrency: ENVIRONMENT_NAME
+    permissions:
+      deployments: write
+      contents: read
+    runs-on: ubuntu-latest
+    container: miaplatform/mlp:2.5.0
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update deployment status (pending)
+        if: success()
+        uses: chrnorm/deployment-status@v2
+        with:
+          token: '${{ github.token }}'
+          state: 'pending'
+          deployment-id: ${{ github.event.deployment.id }}
+      - name: Install prerequisites
+        run: |
+          # Install jq and kubectl for JSON processing and Kubernetes operations
+          apk update && apk add --no-cache jq kubectl
+          
+          echo "Prerequisites installed successfully"
+          jq --version
+          kubectl version --client
+      - name: Initialize environment variables and interpolate files
+        env:
+          KUBE_NAMESPACE: ${{ github.event.deployment.payload.variables.KUBE_NAMESPACE }}
+          ENVIRONMENT_PREFIX: ${{ github.event.deployment.environment }}_
+          DESTINATION_PATH: ${{ github.workspace }}/interpolated-files
+          KUBE_CA_PEM: ${{ secrets.KUBE_CA_PEM }}
+        run: |
+          # Export only non-sensitive variables to GITHUB_ENV
+          echo "KUBE_NAMESPACE=${KUBE_NAMESPACE}" >> $GITHUB_ENV
+          echo "ENVIRONMENT_PREFIX=${ENVIRONMENT_PREFIX}" >> $GITHUB_ENV
+          echo "ENVIRONMENT_VARIABLES_PREFIX=MIA_" >> $GITHUB_ENV
+          echo "DESTINATION_PATH=${DESTINATION_PATH}" >> $GITHUB_ENV
+          
+          # Create CA certificate file securely
+          printf '%%s\n' "${KUBE_CA_PEM}" > /tmp/ca.pem
+          chmod 600 /tmp/ca.pem
+          
+          # chmod +x scripts/export_github_secrets_to_env.sh
+          # scripts/export_github_secrets_to_env.sh "${SECRETS_JSON}"
+
+          echo "Environment variables initialized successfully"
+
+      - name: Deploy my app
+        env:
+          BASE_PATH: ${{ github.workspace }}/configuration
+          OVERLAY_PATH: "${{ github.workspace }}/overlays/${{ github.event.deployment.environment }}"
+          GENERATE_FILE: "${{ github.workspace }}/mlp.yaml"
+          VARIABLES_FILE: "${{ github.workspace }}/overlays/${{ github.event.deployment.environment }}/variables.env"
+          NEXUS_USER: ${{ secrets.NEXUS_USER }}
+          NEXUS_TOKEN: ${{ secrets.NEXUS_TOKEN }}
+          NEXUS_URL: ${{ secrets.NEXUS_URL }}
+        run: |
+          export RELEASE_DATE="$(date -I'seconds' -u)"
+          mkdir ${DESTINATION_PATH}
+          test -f "${VARIABLES_FILE}" && set -a && source "${VARIABLES_FILE}"
+          test -f "${GENERATE_FILE}" && mlp generate -c "${GENERATE_FILE}" -e "${ENVIRONMENT_PREFIX}" -e "${ENVIRONMENT_VARIABLES_PREFIX}" -o "${OVERLAY_PATH}"
+          mlp hydrate "${BASE_PATH}" "${OVERLAY_PATH}"
+          mlp interpolate -e "${ENVIRONMENT_PREFIX}" -e "${ENVIRONMENT_VARIABLES_PREFIX}" -f "${BASE_PATH}" -o "${BASE_PATH}"
+          mlp interpolate -e "${ENVIRONMENT_PREFIX}" -e "${ENVIRONMENT_VARIABLES_PREFIX}" -f "${OVERLAY_PATH}" -o "${OVERLAY_PATH}"
+          mlp kustomize "${OVERLAY_PATH}" -o "${DESTINATION_PATH}/kustomize-output.yaml"
+
+      - name: Create Kubernetes secrets from GitHub secrets
+        env:
+          ENV_SECRET_PREFIX: "K8S_${{ env.ENVIRONMENT_PREFIX }}"
+          COMMON_SECRET_PREFIX: "K8S_${{ env.ENVIRONMENT_VARIABLES_PREFIX }}"
+          KUBE_URL: ${{ secrets.KUBE_URL }}
+          KUBE_TOKEN: ${{ secrets.KUBE_TOKEN }}
+          KUBE_NAMESPACE: ${{ env.KUBE_NAMESPACE }}
+          SECRETS_JSON: ${{ toJSON(secrets) }}
+        shell: sh
+        run: |
+          chmod +x scripts/create_k8s_secrets.sh
+          scripts/create_k8s_secrets.sh "$ENV_SECRET_PREFIX" "$COMMON_SECRET_PREFIX" "$KUBE_URL" "$KUBE_TOKEN" "$KUBE_NAMESPACE" "$SECRETS_JSON"
+      - name: Deploy Application
+        env:
+          DEPLOY_TYPE: ${{ github.event.deployment.payload.variables.DEPLOY_TYPE }}
+          FORCE_DEPLOY_WHEN_NO_SEMVER: ${{ github.event.deployment.payload.variables.FORCE_DEPLOY_WHEN_NO_SEMVER }}
+          KUBE_URL: ${{ secrets.KUBE_URL }}
+          KUBE_TOKEN: ${{ secrets.KUBE_TOKEN }}
+        run: |
+          mlp deploy --wait=false --ensure-namespace=false --server "${KUBE_URL}" --certificate-authority "/tmp/ca.pem" --token "${KUBE_TOKEN}" --deploy-type "${DEPLOY_TYPE}" --force-deploy-when-no-semver="${FORCE_DEPLOY_WHEN_NO_SEMVER}" -f "${DESTINATION_PATH}" -n "${KUBE_NAMESPACE}"
+      - name: Cleanup sensitive files
+        if: always()
+        run: |
+          # Remove CA certificate file
+          rm -f /tmp/ca.pem
+          echo "Cleanup completed"
+      - name: Update deployment status (success)
+        if: success()
+        uses: chrnorm/deployment-status@v2
+        with:
+          token: '${{ github.token }}'
+          state: 'success'
+          deployment-id: ${{ github.event.deployment.id }}
+      - name: Update deployment status (failure)
+        if: failure()
+        uses: chrnorm/deployment-status@v2
+        with:
+          token: '${{ github.token }}'
+          state: 'failure'
+          deployment-id: ${{ github.event.deployment.id }}

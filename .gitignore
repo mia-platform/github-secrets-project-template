@@ -1,0 +1,9 @@
+.env
+
+local
+local/*
+
+interpolated-files
+interpolated-files/*
+
+.DS_Store

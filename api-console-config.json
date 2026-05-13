@@ -1,0 +1,48 @@
+{
+  "endpoints": {},
+  "collections": {},
+  "groups": [],
+  "secrets": [],
+  "cmsCategories": {},
+  "cmsSettings": {
+    "accessGroupsExpression": ""
+  },
+  "cmsAnalytics": {},
+  "cmsDashboard": [],
+  "decorators": {
+    "preDecorators": {},
+    "postDecorators": {}
+  },
+  "services": {
+  },
+  "applications": {},
+  "listeners": {},
+  "apiVersions": [],
+  "version": "0.62.0",
+  "platformVersion": "14.1.0",
+  "configMaps": {},
+  "serviceSecrets": {},
+  "serviceAccounts": {},
+  "unsecretedVariables": [
+    {
+      "name": "LOG_LEVEL",
+      "environments": {
+        "PROD": {
+          "value": "info"
+        },
+        "DEV": {
+          "value": "debug"
+        }
+      }
+    }
+  ],
+  "extensionsConfig": {
+    "files": {}
+  },
+  "enabledFeatures": {
+    "visualize": true,
+    "replicas": true,
+    "api-gateway": true,
+    "api-gateway-envoy": true
+  }
+}
