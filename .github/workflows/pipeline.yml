@@ -20,15 +20,7 @@ jobs:
           token: '${{ github.token }}'
           state: 'pending'
           deployment-id: ${{ github.event.deployment.id }}
-      - name: Install prerequisites
-        run: |
-          # Install jq and kubectl for JSON processing and Kubernetes operations
-          apk update && apk add --no-cache jq kubectl
-          
-          echo "Prerequisites installed successfully"
-          jq --version
-          kubectl version --client
-      - name: Initialize environment variables and interpolate files
+      - name: Initialize environment variables
         env:
           KUBE_NAMESPACE: ${{ github.event.deployment.payload.variables.KUBE_NAMESPACE }}
           ENVIRONMENT_PREFIX: ${{ github.event.deployment.environment }}_
@@ -44,13 +36,10 @@ jobs:
           # Create CA certificate file securely
           printf '%%s\n' "${KUBE_CA_PEM}" > /tmp/ca.pem
           chmod 600 /tmp/ca.pem
-          
-          # chmod +x scripts/export_github_secrets_to_env.sh
-          # scripts/export_github_secrets_to_env.sh "${SECRETS_JSON}"
 
           echo "Environment variables initialized successfully"
 
-      - name: Deploy my app
+      - name: Render manifests
         env:
           BASE_PATH: ${{ github.workspace }}/configuration
           OVERLAY_PATH: "${{ github.workspace }}/overlays/${{ github.event.deployment.environment }}"
@@ -69,18 +58,6 @@ jobs:
           mlp interpolate -e "${ENVIRONMENT_PREFIX}" -e "${ENVIRONMENT_VARIABLES_PREFIX}" -f "${OVERLAY_PATH}" -o "${OVERLAY_PATH}"
           mlp kustomize "${OVERLAY_PATH}" -o "${DESTINATION_PATH}/kustomize-output.yaml"
 
-      - name: Create Kubernetes secrets from GitHub secrets
-        env:
-          ENV_SECRET_PREFIX: "K8S_${{ env.ENVIRONMENT_PREFIX }}"
-          COMMON_SECRET_PREFIX: "K8S_${{ env.ENVIRONMENT_VARIABLES_PREFIX }}"
-          KUBE_URL: ${{ secrets.KUBE_URL }}
-          KUBE_TOKEN: ${{ secrets.KUBE_TOKEN }}
-          KUBE_NAMESPACE: ${{ env.KUBE_NAMESPACE }}
-          SECRETS_JSON: ${{ toJSON(secrets) }}
-        shell: sh
-        run: |
-          chmod +x scripts/create_k8s_secrets.sh
-          scripts/create_k8s_secrets.sh "$ENV_SECRET_PREFIX" "$COMMON_SECRET_PREFIX" "$KUBE_URL" "$KUBE_TOKEN" "$KUBE_NAMESPACE" "$SECRETS_JSON"
       - name: Deploy Application
         env:
           DEPLOY_TYPE: ${{ github.event.deployment.payload.variables.DEPLOY_TYPE }}

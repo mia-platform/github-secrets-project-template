@@ -21,10 +21,17 @@ Each environment includes:
 
 ## Deployment
 
-Deployments are automated through GitHub Actions pipeline defined in [`.github/workflows/pipeline.yml`](.github/workflows/pipeline.yml), which triggers on every push to the repository.
+Deployments run through the GitHub Actions workflow in [`.github/workflows/pipeline.yml`](.github/workflows/pipeline.yml), triggered by the deployment event that Mia-Platform Console creates when you deploy an environment.
+
+The workflow reads these repository secrets: `KUBE_URL`, `KUBE_TOKEN`, `KUBE_CA_PEM`, `NEXUS_USER`, `NEXUS_TOKEN`, `NEXUS_URL`.
+
+## Application secrets
+
+Application secrets are stored in Azure Key Vault. Console generates the resources that let the External Secrets Operator create the `akv-secret` Kubernetes Secret in the project namespace; microservices read values from it through environment variables of type "from secret".
 
 ## Prerequisites
 
 - Kubernetes cluster with Traefik ingress controller
-- Mia-Platform Console access
+- External Secrets Operator installed in the cluster, with Workload Identity access to Azure Key Vault
+- Mia-Platform Console access, with an Azure Key Vault provider configured for the project
 - Nexus registry credentials for container image
