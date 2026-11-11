@@ -1,10 +1,11 @@
 name: Deploy Workflow
 on: deployment
 jobs:
-  deploy-ENVIRONMENT_NAME:
-    name: Deploy to ENVIRONMENT_NAME environment
-    if: ${{ github.event.deployment.environment }} == ENVIRONMENT_NAME
-    concurrency: ENVIRONMENT_NAME
+  # One job serves every environment: everything environment-specific comes from the deployment event,
+  # so environments added in Console after project creation need no workflow change.
+  deploy:
+    name: Deploy to ${{ github.event.deployment.environment }} environment
+    concurrency: ${{ github.event.deployment.environment }}
     permissions:
       deployments: write
       contents: read
